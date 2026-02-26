@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: ecommerce-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: ecommerce_db
+      MYSQL_USER: ecommerce_user
+      MYSQL_PASSWORD: ecommerce_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - ecommerce-network
+
+  # 缓存服务
+  redis:
+    image: redis:alpine
+    container_name: ecommerce-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ecommerce-network
+
+  # 消息队列服务
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: ecommerce-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - ecommerce-network
+
+  # 后台管理服务
+  admin-service:
+    build:
+      context: ./backend/admin
+      dockerfile: Dockerfile
+    container_name: ecommerce-admin-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ecommerce_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - ecommerce-network
+
+  # 支付服务
+  payment-service:
+    build:
+      context: ./backend/payment
+      dockerfile: Dockerfile
+    container_name: ecommerce-payment-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ecommerce_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    networks:
+      - ecommerce-network
+
+  # 履约服务
+  fulfillment-service:
+    build:
+      context: ./backend/fulfillment
+      dockerfile: Dockerfile
+    container_name: ecommerce-fulfillment-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ecommerce_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    networks:
+      - ecommerce-network
+
+  # 订单服务
+  order-service:
+    build:
+      context: ./backend/order
+      dockerfile: Dockerfile
+    container_name: ecommerce-order-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ecommerce_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    networks:
+      - ecommerce-network
+
+  # 后台管理前端
+  admin-frontend:
+    build:
+      context: ./frontend/admin
+      dockerfile: Dockerfile
+    container_name: ecommerce-admin-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - admin-service
+    networks:
+      - ecommerce-network
+
+  # 客户端前端
+  customer-frontend:
+    build:
+      context: ./frontend/customer
+      dockerfile: Dockerfile
+    container_name: ecommerce-customer-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - order-service
+      - payment-service
+    networks:
+      - ecommerce-network
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  ecommerce-network:
+    driver: bridge
